@@ -614,21 +614,88 @@ function renderGrafik(){
 }
 
 // MALİYET HESAPLAMA
-function hesaplaMaliyet(){
+ function hesaplaMaliyet(){
   const uretim=parseFloat(document.getElementById('uretimAdet').value)||5000;
   const fire=parseFloat(document.getElementById('fireOran').value)||10;
   const camurGram=parseFloat(document.getElementById('camurGram').value)||500;
   const boyaTane=parseFloat(document.getElementById('boyaTane').value)||10;
   const renkli=activeUrunTab===0;
 
-  // Uygulamadan gider verilerini çek (son ay veya tüm zamanlar ortalaması)
+  // Fire dahil efektif adet
+  const efektifAdet=Math.max(Math.floor(uretim*(1-fire/100)),1);
+
+  // Çamur maliyeti — uygulamadaki sarf giderinden çek
+  // 500 kg çamur = sarf giderinin büyük kısmı
+  // Formül: (çamurGram / 1000) * (kg başı fiyat) * sarfiyat faktörü
+  // Sarf giderinden aylık ortalama al, kg'a böl
   const aylar=allMonthKeys();
   const aktifAylar=aylar.filter(k=>state.entries.some(e=>e.monthKey===k&&e.tip==='gider'));
   const ayliklarSayisi=Math.max(aktifAylar.length,1);
 
-  function getCatTotal(catId){
-    return state.entries.filter(e=>e.tip==='gider'&&e.kategori===catId).reduce((s,e)=>s+e.tutar,0)/ayliklarSayisi;
+  function aylikCat(catId){
+    return state.entries.filter(e=>e.tip==='gider'&&e.kategori===catId)
+      .reduce((s,e)=>s+e.tutar,0)/ayliklarSayisi;
   }
+
+  const aylikKira=aylikCat('kira');
+  const aylikMaas=aylikCat('maas');
+  const aylikYemek=aylikCat('yemek');
+  const aylikElektrik=aylikCat('elektrik');
+  const aylikSu=aylikCat('su');
+  const aylikNavliye=aylikCat('nakliye');
+  const aylikSarf=aylikCat('sarf');
+  const aylikDiger=aylikCat('diger');
+
+  // Çamur: 500 kg = 3500 TL varsayımı (sarf giderinden dinamik çekiliyor)
+  // 500 kg → kaç tane üretilir: (500*1000) / camurGram
+  const camurKg500Fiyat=aylikSarf>0?aylikSarf:3500; // sarf gideri yoksa 3500 TL varsayım
+  const taneBasinaKg=camurGram/1000;
+  const kgFiyat=camurKg500Fiyat/500; // 500 kg baz
+  const camurHamMaliyet=taneBasinaKg*kgFiyat;
+  const camurTaneMaliyet=camurHamMaliyet*1.08; // %8 sarfiyat kaybı
+
+  // Genel gider (çamur/sarf hariç) tane başına
+  const diger_aylik=aylikKira+aylikMaas+aylikYemek+aylikElektrik+aylikSu+aylikNavliye+aylikDiger;
+  const genelGiderTane=diger_aylik/efektifAdet;
+
+  // Boya
+  const boyaMaliyet=renkli?boyaTane:0;
+
+  const toplamTane=camurTaneMaliyet+genelGiderTane+boyaMaliyet;
+  const onerilenFiyat=Math.ceil(toplamTane*2.5/5)*5;
+
+  // Ekrana yaz
+  document.getElementById('maliyetBaslik').textContent=
+    renkli?'🎨 Renkli Lüle — Maliyet Analizi':'🥛 Sütlü Lüle — Maliyet Analizi';
+
+  const rows=[
+    ['Aylık Üretim', uretim.toLocaleString('tr-TR')+' adet'],
+    ['Fire (%'+fire+') sonrası', efektifAdet.toLocaleString('tr-TR')+' adet'],
+    ['───────', '───────'],
+    ['500 kg çamur fiyatı (sarf)', formatTL(camurKg500Fiyat)],
+    ['1 kg çamur fiyatı', formatTL(kgFiyat)],
+    ['Tane çamur ('+camurGram+'gr + %8)', formatTL(camurTaneMaliyet)],
+    ['Genel gider / tane', formatTL(genelGiderTane)],
+    ...(renkli?[['Boya / tane', formatTL(boyaMaliyet)]]:[['Boya', '— (yok)']]),
+    ['───────', '───────'],
+    ['TOPLAM MALİYET / TANE', formatTL(toplamTane)],
+    ['Aylık toplam maliyet', formatTL(toplamTane*efektifAdet)],
+  ];
+
+  document.getElementById('maliyetRows').innerHTML=rows.map(([l,r])=>
+    `<div class="maliyet-row">
+      <span class="ml">${l}</span>
+      <span class="mr" style="${l.includes('TOPLAM')?'color:var(--yellow);font-size:0.85rem':''}">${r}</span>
+    </div>`
+  ).join('');
+
+  document.getElementById('foTitle').textContent=
+    (renkli?'🎨 Renkli':'🥛 Sütlü')+' Lüle — Önerilen Satış Fiyatı';
+  document.getElementById('foFiyat').textContent=formatTL(onerilenFiyat);
+  document.getElementById('foAciklama').textContent=
+    `Maliyet: ${formatTL(Math.round(toplamTane))} · Kar marjı: ~%${Math.round((onerilenFiyat/toplamTane-1)*100)} · Aylık net kar: ~${formatTL(Math.round((onerilenFiyat-toplamTane)*efektifAdet))}`;
+}
+
 
   const aylikKira=getCatTotal('kira');
   const aylikMaas=getCatTotal('maas');
