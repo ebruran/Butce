@@ -615,6 +615,77 @@ function renderGrafik(){
 
 // MALİYET HESAPLAMA
 function hesaplaMaliyet(){
+  const uretim=parseFloat(document.getElementById('uretimAdet').value)||5000;
+  const fire=parseFloat(document.getElementById('fireOran').value)||10;
+  const camurGram=parseFloat(document.getElementById('camurGram').value)||500;
+  const boyaTane=parseFloat(document.getElementById('boyaTane').value)||10;
+  const renkli=activeUrunTab===0;
+
+  // Uygulamadan gider verilerini çek (son ay veya tüm zamanlar ortalaması)
+  const aylar=allMonthKeys();
+  const aktifAylar=aylar.filter(k=>state.entries.some(e=>e.monthKey===k&&e.tip==='gider'));
+  const ayliklarSayisi=Math.max(aktifAylar.length,1);
+
+  function getCatTotal(catId){
+    return state.entries.filter(e=>e.tip==='gider'&&e.kategori===catId).reduce((s,e)=>s+e.tutar,0)/ayliklarSayisi;
+  }
+
+  const aylikKira=getCatTotal('kira');
+  const aylikMaas=getCatTotal('maas');
+  const aylikYemek=getCatTotal('yemek');
+  const aylikElektrik=getCatTotal('elektrik');
+  const aylikSu=getCatTotal('su');
+  const aylikNavliye=getCatTotal('nakliye');
+  const aylikSarf=getCatTotal('sarf');
+  const aylikDiger=getCatTotal('diger');
+  const toplamAylikGider=aylikKira+aylikMaas+aylikYemek+aylikElektrik+aylikSu+aylikNavliye+aylikSarf+aylikDiger;
+
+  // Fire dahil efektif adet
+  const fireSonrasiAdet=Math.floor(uretim*(1-fire/100));
+  const efektifAdet=Math.max(fireSonrasiAdet,1);
+
+  // Çamur maliyeti
+  // 500 kg = 500.000 gram, tane 500 gram → 1000 tane/500kg
+  // Ama çamur giderini sarf'tan çekiyoruz
+  const sarfEntries=state.entries.filter(e=>e.tip==='gider'&&e.kategori==='sarf');
+  // Çamur: 500kg=3500TL → 1kg=7TL → 500gr=3.5TL, sarfiyat dahil ~3.8TL
+  const camurKgFiyat=sarfEntries.length>0?
+    (sarfEntries.reduce((s,e)=>s+e.tutar,0)/ayliklarSayisi/((uretim*camurGram/1000)||1)):7;
+  const camurTaneMaliyet=(camurGram/1000)*camurKgFiyat*1.08; // %8 sarfiyat
+
+  // Genel gider/tane
+  const genelGiderTane=toplamAylikGider/efektifAdet;
+
+  // Boya/sır
+  const boyaMaliyet=renkli?boyaTane:0;
+
+  const toplamTane=camurTaneMaliyet+genelGiderTane+boyaMaliyet;
+  const onerilenFiyat=Math.ceil(toplamTane*2.5/5)*5; // %150 kar, 5'e yuvarla
+
+  const baslik=renkli?'🎨 Renkli Lüle — Maliyet Analizi':'🥛 Sütlü Lüle — Maliyet Analizi';
+  document.getElementById('maliyetBaslik').textContent=baslik;
+
+  const rows=[
+    ['Aylık Üretim',uretim+' adet'],
+    ['Fire ('+fire+'%) sonrası',efektifAdet+' adet'],
+    ['─────────','─────'],
+    ['Çamur maliyeti/tane',formatTL(camurTaneMaliyet)],
+    ['Genel gider/tane',formatTL(genelGiderTane)],
+    ...(renkli?[['Boya maliyeti/tane',formatTL(boyaMaliyet)]]:[]),
+    ['─────────','─────'],
+    ['TOPLAM MALİYET/TANE',formatTL(toplamTane)],
+    ['Aylık toplam maliyet',formatTL(toplamTane*efektifAdet)],
+  ];
+
+  document.getElementById('maliyetRows').innerHTML=rows.map(([l,r])=>
+    `<div class="maliyet-row"><span class="ml">${l}</span><span class="mr" style="${l.includes('TOPLAM')?'color:var(--red)':''}">${r}</span></div>`
+  ).join('');
+
+  document.getElementById('foTitle').textContent=(renkli?'🎨 Renkli':'🥛 Sütlü')+' Lüle — Önerilen Satış Fiyatı';
+  document.getElementById('foFiyat').textContent=formatTL(onerilenFiyat);
+  document.getElementById('foAciklama').textContent=`Maliyet: ${formatTL(Math.round(toplamTane))} · Kar: ~%${Math.round((onerilenFiyat/toplamTane-1)*100)} · Aylık net: ~${formatTL(Math.round((onerilenFiyat-toplamTane)*efektifAdet))}`;
+}
+
 async function aiMaliyetAnaliz(){
   const uretim=document.getElementById('uretimAdet').value||5000;
   const fire=document.getElementById('fireOran').value||10;
